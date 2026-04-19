@@ -1,106 +1,77 @@
 # GEMINI.md
 
-This file provides guidance to Gemini CLI when working with code in this repository.
+## ⚡ Project Overview: Neuro-Symbolic Grid
 
-## Common Development Commands
+This project implements a **Neuro-Symbolic AI system** designed for power grid fault detection and action validation. It bridges the gap between neural perception (GNN) and symbolic reasoning (Knowledge Graph) to ensure safety-critical decisions in power systems.
 
-### Environment Setup
-- Install Python dependencies: `pip install -r requirements.txt`
-- Install Grid2Op and lightsim2grid: `pip install grid2op lightsim2grid`
-- Install PyTorch Geometric: Follow instructions at https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html
-- Install Ollama for LLM: https://ollama.com/download
-- Pull Qwen2.5-32B model: `ollama pull qwen2.5:32b`
+### 🏗️ Core Architecture
+The system follows a four-component "Shield" architecture:
+1.  **Component A: GNN (Neural Layer)** - Uses PyTorch Geometric (GAT/GCN) to perceive grid states, classify faults, and recommend actions.
+2.  **Component B: LLM Extraction Pipeline** - Uses Ollama (Qwen2.5-32B) and LangChain to extract symbolic rules from grid standards (IEEE, manuals).
+3.  **Component C: Knowledge Graph** - A NetworkX-based store that maps grid topology to extracted symbolic rules.
+4.  **Component D: Symbolic Validation Shield** - A hard constraint layer that intercepts GNN outputs and blocks any that violate the symbolic rules.
 
-### Data Generation
-- Generate dataset using Grid2Op: `python scripts/generate_dataset.py`
-- Uses l2rpn_neurips_2020_track1_small environment by default
-- For large-scale runs: `python scripts/generate_dataset.py --env l2rpn_neurips_2020_track1_large`
+**Non-Negotiable Principle:** GNN outputs are *never* final without symbolic validation.
 
-### LLM Knowledge Extraction
-- Extract rules from documents: `python scripts/extract_rules.py`
-- Processes PDFs/text files in `data/documents/`
-- Outputs structured JSON rules to `data/extracted_rules.json`
+---
 
-### GNN Training
-- Train the GNN model: `python scripts/train_gnn.py`
-- Uses stratified train/val/test split (70/15/15)
-- Logs metrics to Weights & Biases (requires wandb login)
-- Model checkpoints saved to `models/`
+## 🚀 Building and Running
 
-### Knowledge Graph Construction
-- Build knowledge graph from extracted rules: `python scripts/build_kg.py`
-- Creates NetworkX graph pickle at `data/knowledge_graph.gpickle`
+### 📦 Environment Setup
+The project requires a specific installation order for CUDA-enabled PyTorch and PyTorch Geometric.
 
-### Symbolic Validation Shield
-- Run shield validation: `python scripts/validate_shield.py`
-- Takes GNN predictions and validates against knowledge graph rules
+```bash
+# 1. Install PyTorch (optimized for Research PC with RTX 4080 Super / CUDA 12.8)
+pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cu128
 
-### End-to-End Testing
-- Run toy scenario tests: `python scripts/test_toy_scenarios.py`
-- Tests clean pass, overload, and cascading risk scenarios on rte_case5_example
-- Run formal evaluation: `python scripts/evaluate_end_to_end.py`
-- Evaluates on held-out chronics from l2rpn_neurips_2020_track1_small
+# 2. Install PyTorch Geometric
+pip install torch_geometric
 
-### Experiment Tracking
-- View training metrics: `wandb ui` (after launching training)
-- Compare runs: Weights & Biases dashboard
+# 3. Install PyG Dependencies
+pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.8.0+cu128.html
 
-## High-Level Architecture
+# 4. Install remaining requirements
+pip install -r requirements.txt
+```
 
-This repository implements a neuro-symbolic system for power grid fault detection and validation with four main components:
+### 🛠️ Key Commands
 
-1. **Graph Neural Network (Neural Layer)** - Component A
-   - Uses PyTorch Geometric with GAT/GCN architectures
-   - Processes grid state as graph (buses=nodes, lines=edges)
-   - Outputs fault classification and localization recommendations
-   - Input features: voltage, power flows, load/generation, bus types
-   - Two-headed design: classification head (fault type) + localization head (fault location)
+| Task | Command |
+| :--- | :--- |
+| **Verification** | `python sanity/verify_grid2op.py` or `python sanity/verify_stack.py` |
+| **Data Generation** | `python scripts/generate_dataset.py --env neurips` |
+| **GNN Training** | `python training/train_gnn.py` |
+| **LLM Extraction** | `ollama run qwen2.5:32b` (configured via scripts) |
+| **End-to-End Test** | `python -c "import grid2op; ..."` (refer to `study.md` section 8) |
 
-2. **LLM Knowledge Extraction Pipeline** - Component B
-   - Uses Qwen2.5-32B via Ollama (4-bit quantized) for local, reproducible inference
-   - Extracts structured safety rules from IEEE standards and grid documentation
-   - Pipeline: Document chunking → LLM prompting → JSON parsing → Validation → Deduplication
-   - Output schema includes rule_id, source, entity, condition, action, severity, explanation
+---
 
-3. **Knowledge Graph (Symbolic Rule Store)** - Component C
-   - Built with NetworkX (planned migration to Neo4j if scale requires)
-   - Stores extracted rules and grid topology as queryable graph
-   - Node types: Bus, Line, Transformer, Generator, Load, ProtectionDevice, Rule
-   - Edge types: connected_to, feeds, protected_by, has_rule, triggers
-   - Enables relational rule traversal (e.g., "if Line overloaded, check protected breaker")
+## 📂 Project Structure
 
-4. **Symbolic Validation Shield** - Component D
-   - Hard constraint validation layer (not a loss function penalty)
-   - Intercepts every GNN prediction and validates against KG rules
-   - Returns PASS (with validated prediction) or BLOCK (with structured explanation)
-   - Provides traceable explanations citing specific rule IDs and source documents
+-   `scripts/`: Data handling and processing.
+    -   `generate_dataset.py`: Grid2Op simulation runner for data collection.
+    -   `pyg_data.py`: Dataset and loader definitions for PyTorch Geometric.
+    -   `split.py`: Train/Val/Test splitting logic.
+-   `training/`: GNN model definitions and training loops.
+    -   `train_gnn.py`: Main training entry point.
+-   `sanity/`: Lightweight verification scripts to check CUDA, Grid2Op, and stack integrity.
+-   `data/`: (Ignored/External) Storage for generated datasets and simulation chronics.
+-   `study.md`: **The Primary Reference.** Contains full methodology, implementation specs, and logic snippets.
+-   `CLAUDE.md`: Operational guide for AI assistants in this workspace.
 
-### Key Design Principles
-- **GNN outputs are never final without symbolic validation** - The shield is always active
-- **Local LLM preference** - For reproducibility and data sensitivity (Qwen2.5-32B via Ollama)
-- **Grid2Op simulation** - Using l2rpn_neurips_2020_track1 as primary environment (36 subs, 59 lines)
-- **LightSimBackend** - ~10x faster power flow solver for data generation
-- **Explainability focus** - Every blocked decision cites specific rule and source document
+---
 
-### Technology Stack
-- Grid simulation: Grid2Op + lightsim2grid backend
-- GNN framework: PyTorch + PyTorch Geometric
-- LLM inference: Ollama + Qwen2.5-32B (4-bit)
-- LLM orchestration: LangChain
-- Knowledge graph: NetworkX → Neo4j (if needed)
-- Shield logic: Custom Python
-- Data validation: Pydantic
-- Experiment tracking: Weights & Biases
-- Version control: Git + GitHub
+## ⚖️ Development Conventions
 
-### Hardware Allocation
-- **Research PC**: Intel i7-14700K, RTX 4080 Super (16GB VRAM), 64GB RAM
-  - Handles GNN training, dataset generation, LLM extraction
-- **Personal PC**: AMD Ryzen 5 7500F, Intel Arc B580 (12GB VRAM), 16GB RAM
-  - Code development, unit tests, shield logic, small-scale tests only
+1.  **Hardware Awareness**: Heavy workloads (training, extraction, large-scale generation) MUST run on the **Research PC** (RTX 4080 Super). The Development PC is for code editing and smoke tests only.
+2.  **Safety First**: The "Validation Shield" logic (Component D) is the highest priority. Any modification to the GNN must be accompanied by a check on how it interacts with the Shield.
+3.  **Local-First LLM**: All rule extractions must use local Ollama instances for reproducibility and privacy. Do not use external API calls (OpenAI/Claude) for the core extraction pipeline.
+4.  **Schema Enforcement**: Use **Pydantic** for all data structures, especially those handling LLM outputs or grid state snapshots.
 
-### Evaluation Plan
-- GNN metrics: Accuracy, Macro F1-score, Precision/Recall per fault class
-- Shield metrics: Rule compliance rate, False block rate, Block precision
-- LLM extraction: Rule coverage, Rule precision, Parse success rate
-- End-to-end: Safe action rate, Blocked action rate, Explanation quality (1-5 human rating)
+---
+
+## 📚 Documentation Reference
+For deep dives into the math, architecture decisions, or specific training parameters, refer to the following sections in `study.md`:
+-   **Section 2**: GNN Architecture & Features
+-   **Section 3-5**: LLM Pipeline & Knowledge Graph
+-   **Section 8**: Toy Scenario Validation (The "Shield" logic)
