@@ -32,7 +32,7 @@ from tqdm.auto import tqdm
 # Add entries here if you want to support more environments later.
 ENV_REGISTRY = {
     "neurips": {
-        "name":    "l2rpn_neurips_2020_track1",
+        "name":    "l2rpn_neurips_2020_track1_small",
         "tag":     "neurips2020",
         "desc":    "NeurIPS 2020 L2RPN — 36 subs, 59 lines [PRIMARY]",
     },
