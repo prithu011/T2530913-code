@@ -1,8 +1,0 @@
-numpy
-pandas
-scikit-learn
-psutil
-grid2op
-lightsim2grid
-torch
-torch_geometric
