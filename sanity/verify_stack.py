@@ -20,9 +20,9 @@ elif torch.xpu.is_available():
     print(f"XPU available:    {torch.xpu.is_available()}") # True on local, False on Research PC
 
 # Quick Grid2Op smoke test
-env = grid2op.make("l2rpn_case14_sandbox", test='true', backend=LightSimBackend())
+env = grid2op.make("l2rpn_neurips_2020_track1_small", backend=LightSimBackend())
 obs = env.reset()
-print(f"\nGrid2Op OK — obs.rho shape: {obs.rho.shape}")  # → (8,)
+print(f"\nGrid2Op OK — obs.rho shape: {obs.rho.shape}")  # → (59,)
 
 # Quick Ollama smoke test
 llm = Ollama(model="qwen2.5:7b")

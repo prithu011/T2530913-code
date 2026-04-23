@@ -6,32 +6,11 @@ from torch_geometric.data import Data, Dataset
 import os
 import linecache
 
-def get_env_config(env_name):
-    """Get environment configuration based on name."""
-    env_configs = {
-        "neurips": {
-            "name": "l2rpn_neurips_2020_track1_small",
-            "tag": "neurips2020",
-            "desc": "NeurIPS 2020 L2RPN — 36 subs, 59 lines [PRIMARY]",
-            "n_classes": 5
-        },
-        "wcci": {
-            "name": "l2rpn_wcci_2022",
-            "tag": "wcci2022",
-            "desc": "WCCI 2022 L2RPN — 118 subs, 186 lines [STRETCH]",
-            "n_classes": 5
-        }
-    }
-
-    if env_name not in env_configs:
-        raise ValueError(f"Unknown environment: {env_name}. Choose from {list(env_configs.keys())}")
-
-    return env_configs[env_name]
+ENV_NAME = "l2rpn_neurips_2020_track1_small"
 
 class GridEnvMetadata:
-    def __init__(self, env_name):
-        cfg = get_env_config(env_name)
-        self.env_name = cfg["name"]
+    def __init__(self):
+        self.env_name = ENV_NAME
         
         # Grid2Op takes time to initialize; we'll cache the results
         env = grid2op.make(self.env_name)
@@ -136,10 +115,5 @@ class GridDataset(Dataset):
         )
 
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--env', type=str, default='neurips', choices=['neurips', 'wcci'])
-    args = parser.parse_args()
-    
-    meta = GridEnvMetadata(args.env)
-    print(f"Metadata loaded for {args.env}: n_sub={meta.n_sub}, n_line={meta.n_line}")
+    meta = GridEnvMetadata()
+    print(f"Metadata loaded for NeurIPS 2020: n_sub={meta.n_sub}, n_line={meta.n_line}")

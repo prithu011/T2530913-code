@@ -28,25 +28,10 @@ import grid2op
 from grid2op.Parameters import Parameters
 from tqdm.auto import tqdm
 
-# ── ENV REGISTRY ──────────────────────────────────────────────────────────────
-# Add entries here if you want to support more environments later.
-ENV_REGISTRY = {
-    "neurips": {
-        "name":    "l2rpn_neurips_2020_track1_small",
-        "tag":     "neurips2020",
-        "desc":    "NeurIPS 2020 L2RPN — 36 subs, 59 lines [PRIMARY]",
-    },
-    "wcci": {
-        "name":    "l2rpn_wcci_2022",
-        "tag":     "wcci2022",
-        "desc":    "WCCI 2022 L2RPN — 118 subs, 186 lines [STRETCH]",
-    },
-    "toy": {
-        "name":    "rte_case5_example",
-        "tag":     "toy",
-        "desc":    "Toy 5-bus env — integration testing only",
-    },
-}
+# ── ENV CONFIG ──────────────────────────────────────────────────────────────
+ENV_NAME = "l2rpn_neurips_2020_track1_small"
+ENV_TAG  = "neurips2020"
+ENV_DESC = "NeurIPS 2020 L2RPN — 36 subs, 59 lines [PRIMARY]"
 
 # ── FIXED CONFIG ──────────────────────────────────────────────────────────────
 FAULT_PROB  = 0.08   # line-trip injection probability per step
@@ -66,10 +51,6 @@ BUS_KEYS  = ("load_p", "load_q", "gen_p", "gen_q", "topo_vect")
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Grid2Op dataset generator")
-    parser.add_argument(
-        "--env", choices=list(ENV_REGISTRY.keys()), required=True,
-        help="Environment to run: neurips | wcci | toy"
-    )
     parser.add_argument(
         "--smoke", action="store_true",
         help=f"Quick sanity check: {SMOKE_MAX_CHRONICS} chronics × {SMOKE_MAX_STEPS} steps"
@@ -145,12 +126,11 @@ def validate_record(record):
                 raise ValueError(f"Non-finite value in '{key}': {v}")
 
 
-def build_meta(env, env_key, label_counts, total_records, total_time, smoke):
+def build_meta(env, label_counts, total_records, total_time, smoke):
     """Serialisable metadata dict — consumed by GridDataset and GNN constructor."""
     present_labels = {k: v for k, v in label_counts.items() if v > 0}
     return {
-        "env_key":       env_key,
-        "env_name":      ENV_REGISTRY[env_key]["name"],
+        "env_name":      ENV_NAME,
         "smoke_run":     smoke,
         "n_sub":         int(env.n_sub),
         "n_line":        int(env.n_line),
@@ -192,26 +172,24 @@ def print_summary(meta, out_jsonl, out_meta):
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 def main():
     args = parse_args()
-
-    env_cfg = ENV_REGISTRY[args.env]
-    smoke   = args.smoke
+    smoke = args.smoke
 
     max_chronics = SMOKE_MAX_CHRONICS if smoke else args.max_chronics
     max_steps    = SMOKE_MAX_STEPS    if smoke else args.max_steps
 
     out_dir  = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    tag      = env_cfg["tag"] + ("_smoke" if smoke else "")
+    tag      = ENV_TAG + ("_smoke" if smoke else "")
     out_jsonl = out_dir / f"grid_dataset_{tag}.jsonl"
     out_meta  = out_dir / f"grid_dataset_{tag}_meta.json"
 
-    print(f"\n[run]  {env_cfg['desc']}")
+    print(f"\n[run]  {ENV_DESC}")
     if smoke:
         print(f"[run]  SMOKE MODE — {max_chronics} chronics × {max_steps} steps\n")
 
     backend = load_backend()
     make_kwargs = {"backend": backend} if backend else {}
-    env = grid2op.make(env_cfg["name"], **make_kwargs)
+    env = grid2op.make(ENV_NAME, **make_kwargs)
 
     params = Parameters()
     params.NO_OVERFLOW_DISCONNECTION = True
@@ -279,7 +257,7 @@ def main():
                     break
 
     total_time = time.time() - t_start
-    meta = build_meta(env, args.env, label_counts, total_written, total_time, smoke)
+    meta = build_meta(env, label_counts, total_written, total_time, smoke)
 
     with out_meta.open("w") as f:
         json.dump(meta, f, indent=2)

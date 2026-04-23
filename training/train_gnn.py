@@ -1,3 +1,9 @@
+import sys
+import os
+
+# Ensure we can import from root (for scripts.* and training.*)
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -5,28 +11,41 @@ from torch_geometric.nn import GATConv, global_mean_pool
 from torch_geometric.loader import DataLoader
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
-import sys
-import os
 import numpy as np
 import argparse
 
-# Ensure we can import from scripts
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+# Import centralized configuration
+try:
+    from training.config import DEVICE, DATA_FILE, TRAIN_CONFIG, NODE_FEATURES, EDGE_FEATURES, SEED
+except ImportError:
+    from config import DEVICE, DATA_FILE, TRAIN_CONFIG, NODE_FEATURES, EDGE_FEATURES, SEED
+
 from scripts.pyg_data import GridDataset, GridEnvMetadata, LABEL_MAP
 from scripts.split import get_splits, compute_class_weights
 
 class GridGNN(nn.Module):
-    def __init__(self, node_features, edge_features, n_classes):
+    def __init__(self, node_features, edge_features, n_classes, hidden_channels, heads, dropout):
         super().__init__()
-        self.conv1 = GATConv(node_features, 64,  heads=4, edge_dim=edge_features, dropout=0.2)
-        self.conv2 = GATConv(256,          128,  heads=4, edge_dim=edge_features, dropout=0.2)
-        self.conv3 = GATConv(512,          256,  heads=1, edge_dim=edge_features, dropout=0.2)
+        # hidden_channels: [64, 128, 256]
+        # heads: [4, 4, 1]
+        
+        self.conv1 = GATConv(node_features, hidden_channels[0], heads=heads[0], 
+                             edge_dim=edge_features, dropout=dropout)
+        
+        # Input to conv2 is hidden_channels[0] * heads[0]
+        self.conv2 = GATConv(hidden_channels[0] * heads[0], hidden_channels[1], 
+                             heads=heads[1], edge_dim=edge_features, dropout=dropout)
+        
+        # Input to conv3 is hidden_channels[1] * heads[1]
+        self.conv3 = GATConv(hidden_channels[1] * heads[1], hidden_channels[2], 
+                             heads=heads[2], edge_dim=edge_features, dropout=dropout)
 
+        last_dim = hidden_channels[2] * heads[2]
         self.classifier = nn.Sequential(
-            nn.Linear(256, 128), nn.ReLU(), nn.Dropout(0.3), nn.Linear(128, n_classes)
+            nn.Linear(last_dim, 128), nn.ReLU(), nn.Dropout(0.3), nn.Linear(128, n_classes)
         )
         self.localizer = nn.Sequential(
-            nn.Linear(256, 64), nn.ReLU(), nn.Linear(64, 1)
+            nn.Linear(last_dim, 64), nn.ReLU(), nn.Linear(64, 1)
         )
 
     def forward(self, x, edge_index, edge_attr, batch):
@@ -52,28 +71,35 @@ def build_loc_targets(batch):
         node_offset += n_nodes
     return targets
 
-if __name__ == "__main__":
+def train():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env', type=str, default='neurips', choices=['neurips', 'wcci'])
-    parser.add_argument('--epochs', type=int, default=50)
-    parser.add_argument('--batch_size', type=int, default=32)
-    parser.add_argument('--lr', type=float, default=1e-3)
+    # Optional overrides for config
+    parser.add_argument('--epochs', type=int, default=None)
+    parser.add_argument('--batch_size', type=int, default=None)
+    parser.add_argument('--lr', type=float, default=None)
     args = parser.parse_args()
 
-    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Load config (now fixed to NeurIPS)
+    epochs     = args.epochs if args.epochs is not None else TRAIN_CONFIG["epochs"]
+    batch_size = args.batch_size if args.batch_size is not None else TRAIN_CONFIG["batch_size"]
+    lr         = args.lr if args.lr is not None else TRAIN_CONFIG["lr"]
+
+    torch.manual_seed(SEED)
     print(f"Using device: {DEVICE}")
+    print("Environment: NeurIPS 2020 Track 1 Small")
 
     # Load metadata and determine data file
-    meta = GridEnvMetadata(args.env)
-    if args.env == 'neurips':
-        data_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "../data/grid_dataset_neurips2020.jsonl"))
-    else:
-        data_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "../data/grid_dataset_wcci2022.jsonl"))
+    meta = GridEnvMetadata()
+    data_file = DATA_FILE
+
+    if not os.path.exists(data_file):
+        print(f"Error: Data file {data_file} not found.")
+        sys.exit(1)
 
     print(f"Loading data from {data_file}...")
     
-    # Check if we have pre-computed splits for this environment
-    split_prefix = f"split_{args.env}"
+    # Check for pre-computed splits
+    split_prefix = "split_neurips2020"
     train_idx_path = f"{split_prefix}_train_idx.npy"
     val_idx_path = f"{split_prefix}_val_idx.npy"
     
@@ -93,10 +119,6 @@ if __name__ == "__main__":
 
     # Compute class weights for loss
     print("Computing class weights...")
-    # To compute weights, we need labels of training set.
-    # We can use the load_labels from split.py but it's already done inside get_splits.
-    # For now, let's just use equal weights or reload labels if needed.
-    # Loading labels for the whole file once is okay.
     from scripts.split import load_labels
     all_labels = load_labels(data_file)
     train_labels = [all_labels[i] for i in train_idx]
@@ -104,19 +126,27 @@ if __name__ == "__main__":
     class_weights = torch.tensor(weights, dtype=torch.float).to(DEVICE)
     print(f"Class weights: {class_weights}")
 
-    train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=0) # num_workers=0 for stability on Windows
-    val_loader   = DataLoader(val_ds,   batch_size=args.batch_size, shuffle=False, num_workers=0)
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=0)
+    val_loader   = DataLoader(val_ds,   batch_size=batch_size, shuffle=False, num_workers=0)
 
-    model = GridGNN(node_features=4, edge_features=3, n_classes=len(LABEL_MAP)).to(DEVICE)
-    optimizer = AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
-    scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs)
+    model = GridGNN(
+        node_features=NODE_FEATURES, 
+        edge_features=EDGE_FEATURES, 
+        n_classes=len(LABEL_MAP),
+        hidden_channels=TRAIN_CONFIG["hidden_channels"],
+        heads=TRAIN_CONFIG["heads"],
+        dropout=TRAIN_CONFIG["dropout"]
+    ).to(DEVICE)
+
+    optimizer = AdamW(model.parameters(), lr=lr, weight_decay=TRAIN_CONFIG["weight_decay"])
+    scheduler = CosineAnnealingLR(optimizer, T_max=epochs)
 
     cls_loss_fn = nn.CrossEntropyLoss(weight=class_weights)
     loc_loss_fn = nn.BCEWithLogitsLoss()
 
     best_val_acc = 0.0
 
-    for epoch in range(args.epochs):
+    for epoch in range(epochs):
         model.train()
         total_loss = 0.0
         for batch in train_loader:
@@ -132,7 +162,7 @@ if __name__ == "__main__":
             else:
                 loc_loss = torch.tensor(0.0, device=DEVICE)
 
-            loss = cls_loss + 0.5 * loc_loss
+            loss = cls_loss + TRAIN_CONFIG["loc_loss_weight"] * loc_loss
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -150,11 +180,14 @@ if __name__ == "__main__":
                 correct += (logits.argmax(dim=1) == batch.y).sum().item()
                 total   += batch.num_graphs
 
-        val_acc = correct / total
+        val_acc = correct / (total + 1e-9)
         print(f"Epoch {epoch+1:3d} | loss={total_loss/len(train_loader):.4f} | val_acc={val_acc:.4f}")
 
         if val_acc > best_val_acc:
             best_val_acc = val_acc
-            torch.save(model.state_dict(), f"gnn_checkpoint_{args.env}_best.pt")
+            torch.save(model.state_dict(), "gnn_checkpoint_best.pt")
 
     print(f"Training complete. Best val_acc: {best_val_acc:.4f}")
+
+if __name__ == "__main__":
+    train()

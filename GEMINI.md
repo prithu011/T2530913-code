@@ -39,7 +39,7 @@ pip install -r requirements.txt
 | Task | Command |
 | :--- | :--- |
 | **Verification** | `python sanity/verify_grid2op.py` or `python sanity/verify_stack.py` |
-| **Data Generation** | `python scripts/generate_dataset.py --env neurips` |
+| **Data Generation** | `python scripts/generate_dataset.py` |
 | **GNN Training** | `python training/train_gnn.py` |
 | **LLM Extraction** | `ollama run qwen2.5:32b` (configured via scripts) |
 | **End-to-End Test** | `python -c "import grid2op; ..."` (refer to `study.md` section 8) |

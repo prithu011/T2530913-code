@@ -46,8 +46,8 @@ def compute_class_weights(labels, label_map):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input', type=str, required=True, help='Path to .jsonl dataset')
-    parser.add_argument('--output_prefix', type=str, default='split', help='Prefix for output files')
+    parser.add_argument('--input', type=str, default='data/grid_dataset_neurips2020.jsonl', help='Path to .jsonl dataset')
+    parser.add_argument('--output_prefix', type=str, default='split_neurips2020', help='Prefix for output files')
     args = parser.parse_args()
 
     print(f"Loading labels from {args.input}...")
