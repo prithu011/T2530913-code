@@ -34,9 +34,10 @@ ENV_TAG  = "neurips2020"
 ENV_DESC = "NeurIPS 2020 L2RPN — 36 subs, 59 lines [PRIMARY]"
 
 # ── FIXED CONFIG ──────────────────────────────────────────────────────────────
-FAULT_PROB  = 0.08   # line-trip injection probability per step
-SEED        = 42
-RHO_CLIP    = 2.0    # clip rho before saving; must match GridDataset normalisation
+FAULT_PROB      = 0.02   # ← was 0.08; lower = longer episodes, more records
+RECONNECT_PROB  = 0.6    # probability of reconnecting a tripped line each step
+SEED            = 42
+RHO_CLIP        = 2.0        # clip rho before saving; must match GridDataset normalisation
 
 # Smoke-test overrides (--smoke flag)
 SMOKE_MAX_CHRONICS = 3
@@ -218,25 +219,39 @@ def main():
                         max_steps if max_steps else int(1e9))
 
             prev_line_status = obs.line_status.copy()
+            tripped_lines = set()  # track lines we tripped so we can reconnect them
 
             for t in tqdm(range(steps), desc=f"  Chronic {chronic_id+1}", leave=False, unit="step"):
                 action      = do_nothing
                 fault_label = "normal"
                 fault_loc   = None
 
-                if np.random.rand() < FAULT_PROB:
+                # ── Reconnect a previously tripped line (grid recovery) ──────────────
+                if tripped_lines and np.random.rand() < RECONNECT_PROB:
+                    line_id = int(np.random.choice(list(tripped_lines)))
+                    action  = env.action_space({"set_line_status": [(line_id, 1)]})
+                    tripped_lines.discard(line_id)
+
+                # ── Inject a new fault (only if not already reconnecting) ────────────
+                elif np.random.rand() < FAULT_PROB:
                     connected = np.where(obs.line_status)[0]
-                    if len(connected) > 0:
+                    # Don't trip a line if fewer than N lines are up (avoid guaranteed collapse)
+                    if len(connected) > env.n_line * 0.7:
                         line_id     = int(np.random.choice(connected))
                         action      = env.action_space({"set_line_status": [(line_id, -1)]})
                         fault_label = "line_trip"
                         fault_loc   = line_id
+                        tripped_lines.add(line_id)
 
                 obs, reward, done, _info = env.step(action)
                 fault_label, fault_loc   = derive_label(
                     obs, prev_line_status, fault_label, fault_loc
                 )
                 prev_line_status = obs.line_status.copy()
+
+                # Update tripped set from actual observation (handles env-side disconnections)
+                newly_tripped = set(np.where(~obs.line_status)[0])
+                tripped_lines.update(newly_tripped)
 
                 record = {
                     **extract_features(obs),
@@ -254,6 +269,7 @@ def main():
                 total_written += 1
 
                 if done:
+                    tripped_lines.clear()  # reset for next chronic
                     break
 
     total_time = time.time() - t_start

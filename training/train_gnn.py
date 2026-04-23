@@ -16,9 +16,9 @@ import argparse
 
 # Import centralized configuration
 try:
-    from training.config import DEVICE, DATA_FILE, TRAIN_CONFIG, NODE_FEATURES, EDGE_FEATURES, SEED
+    from training.config import DEVICE, DATA_FILE, DATA_DIR, TRAIN_CONFIG, NODE_FEATURES, EDGE_FEATURES, SEED
 except ImportError:
-    from config import DEVICE, DATA_FILE, TRAIN_CONFIG, NODE_FEATURES, EDGE_FEATURES, SEED
+    from config import DEVICE, DATA_FILE, DATA_DIR, TRAIN_CONFIG, NODE_FEATURES, EDGE_FEATURES, SEED
 
 from scripts.pyg_data import GridDataset, GridEnvMetadata, LABEL_MAP
 from scripts.split import get_splits, compute_class_weights
@@ -98,21 +98,19 @@ def train():
 
     print(f"Loading data from {data_file}...")
     
-    # Check for pre-computed splits
+    # Strictly require pre-computed splits
     split_prefix = "split_neurips2020"
-    train_idx_path = f"{split_prefix}_train_idx.npy"
-    val_idx_path = f"{split_prefix}_val_idx.npy"
+    train_idx_path = os.path.join(DATA_DIR, f"{split_prefix}_train_idx.npy")
+    val_idx_path = os.path.join(DATA_DIR, f"{split_prefix}_val_idx.npy")
     
-    if os.path.exists(train_idx_path) and os.path.exists(val_idx_path):
-        print("Using saved split indices.")
-        train_idx = np.load(train_idx_path)
-        val_idx = np.load(val_idx_path)
-    else:
-        print("Computing new splits (this may take a while for large files)...")
-        train_idx, val_idx, test_idx = get_splits(data_file)
-        np.save(train_idx_path, train_idx)
-        np.save(val_idx_path, val_idx)
-        np.save(f"{split_prefix}_test_idx.npy", test_idx)
+    if not (os.path.exists(train_idx_path) and os.path.exists(val_idx_path)):
+        print(f"Error: Split files not found at {train_idx_path}.")
+        print("Please run: python scripts/split.py")
+        sys.exit(1)
+
+    print("Using saved split indices.")
+    train_idx = np.load(train_idx_path)
+    val_idx = np.load(val_idx_path)
 
     train_ds = GridDataset(data_file, train_idx, meta)
     val_ds   = GridDataset(data_file, val_idx, meta)

@@ -1,6 +1,7 @@
 import json
 import numpy as np
 import argparse
+import sys
 from sklearn.model_selection import train_test_split
 
 def load_labels(file_path):
@@ -50,13 +51,21 @@ if __name__ == "__main__":
     parser.add_argument('--output_prefix', type=str, default='split_neurips2020', help='Prefix for output files')
     args = parser.parse_args()
 
+    import os
+    if not os.path.exists(args.input):
+        print(f"Error: Dataset {args.input} not found.")
+        sys.exit(1)
+
     print(f"Loading labels from {args.input}...")
     train_idx, val_idx, test_idx = get_splits(args.input)
     
     print(f"Split sizes: Train={len(train_idx)}, Val={len(val_idx)}, Test={len(test_idx)}")
     
-    # Save indices to avoid reloading and re-splitting
-    np.save(f"{args.output_prefix}_train_idx.npy", train_idx)
-    np.save(f"{args.output_prefix}_val_idx.npy", val_idx)
-    np.save(f"{args.output_prefix}_test_idx.npy", test_idx)
-    print("Split indices saved.")
+    # Save indices in the data directory
+    out_dir = 'data'
+    os.makedirs(out_dir, exist_ok=True)
+    
+    np.save(os.path.join(out_dir, f"{args.output_prefix}_train_idx.npy"), train_idx)
+    np.save(os.path.join(out_dir, f"{args.output_prefix}_val_idx.npy"), val_idx)
+    np.save(os.path.join(out_dir, f"{args.output_prefix}_test_idx.npy"), test_idx)
+    print(f"Split indices saved in {out_dir}/: {args.output_prefix}_*.npy")
