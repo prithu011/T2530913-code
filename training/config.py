@@ -21,16 +21,32 @@ DATA_FILE = os.path.join(DATA_DIR, "grid_dataset_neurips2020.jsonl")
 
 # ── HYPERPARAMETERS ──────────────────────────────────────────────────────────
 # NeurIPS 2020 L2RPN — 36 subs, 59 lines [PRIMARY]
-TRAIN_CONFIG = {
-    "epochs": 50,
-    "batch_size": 32,
-    "lr": 1e-3,
-    "weight_decay": 1e-4,
-    "dropout": 0.2,
-    "hidden_channels": [64, 128, 256],
-    "heads": [4, 4, 1],
-    "loc_loss_weight": 0.5
-}
+
+# Auto-scale config based on device
+if DEVICE.type == "cuda":
+    # Research PC — full scale
+    TRAIN_CONFIG = {
+        "epochs": 100,
+        "batch_size": 256,
+        "lr": 1e-3,
+        "weight_decay": 1e-4,
+        "dropout": 0.2,
+        "hidden_channels": [128, 256, 512],
+        "heads": [8, 8, 1],
+        "loc_loss_weight": 0.5
+    }
+else:
+    # Personal PC — smoke test only
+    TRAIN_CONFIG = {
+        "epochs": 3,
+        "batch_size": 8,
+        "lr": 1e-3,
+        "weight_decay": 1e-4,
+        "dropout": 0.2,
+        "hidden_channels": [64, 128, 256],
+        "heads": [4, 4, 1],
+        "loc_loss_weight": 0.5
+    }
 
 # ── MODEL ARCHITECTURE ───────────────────────────────────────────────────────
 # These dimensions are fixed by the GridDataset implementation in pyg_data.py

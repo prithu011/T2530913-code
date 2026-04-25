@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import json
 import grid2op
-from torch_geometric.data import Data, Dataset
+from torch_geometric.data import Data, Dataset, InMemoryDataset
 import os
 import linecache
 
@@ -57,15 +57,19 @@ def build_node_features(r, meta: GridEnvMetadata):
     node_rho  = np.zeros(meta.n_sub, dtype=np.float32)
     v_count   = np.zeros(meta.n_sub, dtype=np.float32)
 
-    for i, sub in enumerate(meta.load_to_sub):
-        node_load[sub] += load_p[i]
-    for i, sub in enumerate(meta.gen_to_sub):
-        node_gen[sub] += gen_p[i]
-    for i, (s_or, s_ex) in enumerate(zip(meta.line_or_bus, meta.line_ex_bus)):
-        node_v[s_or] += v_or[i]; v_count[s_or] += 1
-        node_v[s_ex] += v_or[i]; v_count[s_ex] += 1
-        node_rho[s_or] = max(node_rho[s_or], rho[i])
-        node_rho[s_ex] = max(node_rho[s_ex], rho[i])
+    # 1. Vectorized Additions
+    np.add.at(node_load, meta.load_to_sub, load_p)
+    np.add.at(node_gen, meta.gen_to_sub, gen_p)
+
+    # 2. Vectorized Voltage Accumulation
+    np.add.at(node_v, meta.line_or_bus, v_or)
+    np.add.at(v_count, meta.line_or_bus, 1)
+    np.add.at(node_v, meta.line_ex_bus, v_or)
+    np.add.at(v_count, meta.line_ex_bus, 1)
+
+    # 3. Vectorized Maximums for Rho
+    np.maximum.at(node_rho, meta.line_or_bus, rho)
+    np.maximum.at(node_rho, meta.line_ex_bus, rho)
 
     node_v = np.divide(node_v, v_count, out=np.zeros_like(node_v), where=v_count > 0)
 
@@ -126,6 +130,18 @@ class GridDataset(Dataset):
             y          = torch.tensor(label,       dtype=torch.long),
             fault_loc  = torch.tensor(fault_loc if fault_loc is not None else -1, dtype=torch.long),
         )
+
+class PreloadedGridDataset(InMemoryDataset):
+    # Loads a highly compressed, collated dataset directly into GPU memory.
+    
+    def __init__(self, pt_file_path, device=None):
+        super().__init__(root=None) 
+        
+        self.data, self.slices = torch.load(pt_file_path, weights_only=False)
+        
+        # Move the entire monolithic tensor to the GPU
+        if device is not None:
+            self.data = self.data.to(device)
 
 if __name__ == "__main__":
     meta = GridEnvMetadata()
