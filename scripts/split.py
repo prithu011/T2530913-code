@@ -38,21 +38,18 @@ def get_splits(file_path, train_size=0.7, val_size=0.15, test_size=0.15, random_
     return train_idx, val_idx, test_idx
 
 def compute_class_weights(labels, label_map):
-    """
-    Inverse-frequency weights, normalized so they sum to n_classes.
-    Handles missing classes gracefully (weight = 0 for absent classes).
-    """
     n_classes = len(label_map)
     counts = np.zeros(n_classes, dtype=np.float64)
-    
     for l in labels:
         if l in label_map:
             counts[label_map[l]] += 1
     
-    # Inverse frequency — absent classes get weight 0
-    weights = np.where(counts > 0, 1.0 / counts, 0.0)
+    # Effective count smoothing — reduces extreme weights for very rare classes
+    beta = 0.9999
+    effective_counts = (1.0 - np.power(beta, counts)) / (1.0 - beta)
+    weights = np.where(counts > 0, 1.0 / effective_counts, 0.0)
     
-    # Normalize so weights sum to n_classes (keeps loss scale stable)
+    # Normalize to n_classes
     total = weights.sum()
     if total > 0:
         weights = weights * (n_classes / total)
